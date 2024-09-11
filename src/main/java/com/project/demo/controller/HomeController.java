@@ -19,13 +19,14 @@ public class HomeController {
     }
     @GetMapping("/")
     public String home() {
-        System.out.println("dsaklndslk");
 
         return "index";
     }
-    @GetMapping("/deep")
-    public String deep() {
-        System.out.println("dsaklndslk");
+    @GetMapping("/productHome")
+    public String targetPage() {
+        return "/product/productHome"; // targetPage.jsp 또는 HTML 파일로 이동
+    }
+
 
         return "deep/deep";
     }
