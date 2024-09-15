@@ -25,5 +25,5 @@ jobs:
                 git pull
                 mvn clean package
                 mv target/untitled-1.0-SNAPSHOT.war /opt/tomcat/webapps/
-                /opt/tomcat/bin/catalina.sh stop
-                /opt/tomcat/bin/catalina.sh start
+                sudo /opt/tomcat/bin/catalina.sh stop
+                sudo /opt/tomcat/bin/catalina.sh start
