@@ -39,9 +39,8 @@
                 <img class="sidebar-icons" id="showFriends" src="${path}/images/icon/user-icon-white.png">
                 <img class="sidebar-icons" src="${path}/images/icon/users-icon-white.png">
                 <img class="sidebar-icons" id="toggle-search" src="${path}/images/icon/search-icon-white.png">
-                <svg class="sidebar-icons-bell" id="alarm" xmlns="http://www.w3.org/2000/svg" width="16" height="16"
-                     fill="currentColor" class="bi bi-bell" viewBox="0 0 16 16">
-                    <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"/>
+                <svg class="sidebar-icons-bell bi bi-bell" id="alarm" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"  viewBox="0 0 16 16">
+                    <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"></path>
                 </svg>
             </div>
         </div>
@@ -467,13 +466,13 @@
                         response.forEach(friend => {
                             console.log(friend);
                             friendListHtml += `
-                                <div class="friend-item dropdown" id="friend-\${friend.id}">
-                                <p class="dropdown-toggle" id="dropdownMenuButton\${friend.id}" data-bs-toggle="dropdown" aria-expanded="false">
+                                <div class="friend-item dropdown" id="friend-\${friend.usrId}">
+                                <p class="dropdown-toggle" id="dropdownMenuButton\${friend.usrId}" data-bs-toggle="dropdown" aria-expanded="false">
                                 \${friend.display_name} (\${friend.statusMessage || ''})
                         </p>
-                            <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="dropdownMenuButton\${friend.id}">
+                            <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="dropdownMenuButton\${friend.usrId}">
                                 <li><a class="dropdown-item" href="#" onclick="viewProfile(\${friend.id})">프로필 보기</a></li>
-                                <li><a class="dropdown-item" href="#" onclick="startCall(\${friend.id},'\${friend.display_name}')">통화하기</a></li>
+                                <li><a class="dropdown-item" href="#" onclick="startCall(\${friend.usrId},'\${friend.display_name}')">통화하기</a></li>
                             </ul>
                         </div>
                             `;
@@ -502,6 +501,7 @@
         // 통화하기 함수
             var roomNo = null;
         function startCall(friendId,displayName) {
+            console.log('친구아이디'+friendId);
             // 기존 채팅방이 있을 경우 제거
             $('#chat-room').remove();
             // 새로운 채팅방 div 추가
@@ -530,8 +530,37 @@
                     myId : ${loginMember.id}
                 },
                 success:function(response){
-                    console.log(response);
+                    console.log(response.roomNo+"방번호");
                     roomNo = response.roomNo;
+                    let messages = response.messages;
+                    // 받은 메시지를 #messages div에 추가
+                    messages.forEach(msg => {
+                        let messageHtml = `
+                            <div class="message-item">
+                                <strong>\${msg.writer === response.myId ? '나' : '상대방'}: </strong>
+                                <span>\${msg.message}</span>
+                                <small class="text-muted">\${new Date(msg.messageTime).toLocaleTimeString()}</small>
+                            </div>
+                        `;
+                        $("#messages").append(messageHtml);
+                    });
+                        stompClient.subscribe('/topic/room/' + roomNo, function (message) {
+                            let loginMemberId = ${loginMember.id};
+                            let parsedMessage = JSON.parse(message.body);
+
+                            console.log('sub수신');
+                            console.log(message);
+                            let messageHtmlLive = `
+                            <div class="message-item">
+                                <strong>\${parsedMessage.writer === loginMemberId ? '나' : '상대방'}: </strong>
+                                <span>\${parsedMessage.message}</span>
+                                <small class="text-muted">\${new Date(parsedMessage.messageTime).toLocaleTimeString()}</small>
+                            </div>
+                        `;
+                            $("#messages").append(messageHtmlLive);
+                        });
+                },error:function(error){
+                    console.log(error);
                 }
             });
 
@@ -559,15 +588,17 @@
 
             // 메시지를 서버로 전송하는 로직 (추후 서버 연동 필요)
             console.log('메시지 전송:', message, '대상:', friendId);
+            console.log('방번호'+roomNo);
             $.ajax({
                 type:"POST",
                 url:"/sendMessage",
-                data:{
-                    roomNo : roomNo,
-                    writer : '\${loginMember.id}',
+                contentType: "application/json",
+                data:JSON.stringify({
+                    channelId : roomNo,
+                    writer : ${loginMember.id},
                     message : message,
                     messageTime : new Date().getTime()
-                },
+                }),
                 success:function (response){
                     console.log(response);
                 }
