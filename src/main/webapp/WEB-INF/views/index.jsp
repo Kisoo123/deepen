@@ -1,4 +1,4 @@
-<%@ page contentType="text/html;charset=utf-8" isELIgnored="false" %>
+<%@ page contentType="text/html;charset=utf-8" language="java" isELIgnored="false" pageEncoding="utf-8" %>
 <%@taglib prefix="c" uri="http://java.sun.com/jsp/jstl/core" %>
 <%@ taglib prefix="sec" uri="http://www.springframework.org/security/tags" %>
 
@@ -32,8 +32,7 @@
         integrity="sha384-0pUGZvbkm6XF6gxjEnlmuGrJXVbNuzT9qBBavbLwCsOGabYfZo0T0to5eqruptLy"
         crossorigin="anonymous"></script>
 <script src="http://code.jquery.com/jquery-latest.min.js"></script>
-<jsp:include page="${path}/WEB-INF/views/common/header.jsp"/>
-
+<%@ include file="/WEB-INF/views/common/header.jsp"%>
 <div id="root-div">
     <%-- 사이드바 --%>
     <div id="sidebar">
