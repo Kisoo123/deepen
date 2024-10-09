@@ -32,7 +32,7 @@
         integrity="sha384-0pUGZvbkm6XF6gxjEnlmuGrJXVbNuzT9qBBavbLwCsOGabYfZo0T0to5eqruptLy"
         crossorigin="anonymous"></script>
 <script src="https://code.jquery.com/jquery-latest.min.js"></script>
-<%@ include file="/WEB-INF/views/common/header.jsp"%>
+<%@ include file="/WEB-INF/views/common/header.jsp" %>
 <div id="root-div">
     <%-- 사이드바 --%>
     <div id="sidebar">
@@ -41,7 +41,8 @@
                 <img class="sidebar-icons" id="showFriends" src="${path}/images/icon/user-icon-white.png">
                 <img class="sidebar-icons" src="${path}/images/icon/users-icon-white.png">
                 <img class="sidebar-icons" id="toggle-search" src="${path}/images/icon/search-icon-white.png">
-                <svg class="sidebar-icons-bell bi bi-bell" id="alarm" xmlns="http://www.w3.org/2000/svg" width="16" height="16" fill="currentColor"  viewBox="0 0 16 16">
+                <svg class="sidebar-icons-bell bi bi-bell" id="alarm" xmlns="http://www.w3.org/2000/svg" width="16"
+                     height="16" fill="currentColor" viewBox="0 0 16 16">
                     <path d="M8 16a2 2 0 0 0 2-2H6a2 2 0 0 0 2 2M8 1.918l-.797.161A4 4 0 0 0 4 6c0 .628-.134 2.197-.459 3.742-.16.767-.376 1.566-.663 2.258h10.244c-.287-.692-.502-1.49-.663-2.258C12.134 8.197 12 6.628 12 6a4 4 0 0 0-3.203-3.92zM14.22 12c.223.447.481.801.78 1H1c.299-.199.557-.553.78-1C2.68 10.2 3 6.88 3 6c0-2.42 1.72-4.44 4.005-4.901a1 1 0 1 1 1.99 0A5 5 0 0 1 13 6c0 .88.32 4.2 1.22 6"></path>
                 </svg>
             </div>
@@ -127,16 +128,19 @@
 </script>
 
 <c:if test="${loginMember!='anonymousUser'}">
-<%--    로그인 후 실행되는 스크립트--%>
+    <%--    로그인 후 실행되는 스크립트--%>
 
 
     <script>
+        const protocol = window.location.protocol === 'https:' ? 'wss' : 'ws';
+        const scheme = window.location.protocol;
+
         <%--                    알람관련                --%>
 
         // 유저의 ID, 서버에서 이 값을 통해 해당 유저의 알림을 구독
 
         // SockJS를 이용해 WebSocket 연결을 설정
-        const Stompsocket = new SockJS('https://' + window.location.host +'${path}'+ '/wss'); // 서버의 WebSocket 엔드포인트
+        const Stompsocket = new SockJS(scheme + '//' + window.location.host + '${path}' + '/' + protocol); // 서버의 WebSocket 엔드포인트
         const stompClient = Stomp.over(Stompsocket);
 
         // 연결을 성공하면 구독을 설정
@@ -151,122 +155,187 @@
             });
         });
 
+/*                                      음성채팅 관련                                      */
 
-        // 음성채팅 관련
-        let socket = new WebSocket('wss://' + window.location.host + '${path}'+'/signal');
-        let peerConnection = new RTCPeerConnection();
+         $(document).on('click', '#start-call-button', function () {
+            console.log('start-call-button');
+            createPeerConnection(); // PeerConnection 생성
+            joinRoom(); // 방에 입장
+            startSignaling();
+        });
 
-        // 웹소켓 재연결 메소드
-        function initializeWebSocket() {
-            if (socket.readyState === WebSocket.CLOSED || socket.readyState === WebSocket.CLOSING) {
-                console.log("WebSocket is closed. Reconnecting...");
-                socket = new WebSocket('wss://' + window.location.host + '${path}'+'/signal');
-            }
+        // 방에 입장하는 함수
+        function joinRoom() {
+            // 해당 방의 신호 경로를 구독 (WebRTC 신호 처리)
+            stompClient.subscribe('/topic/signal/' + roomNo, function(message) {
+                const data = JSON.parse(message.body);
+                        // 자신이 보낸 메시지인지 확인하고, 자신이 보낸 메시지라면 무시
+                if (data.loginMemberId === ${loginMember.id}) {
+                    console.log("자신의 메시지 무시");
+                    return; // 자신이 보낸 메시지는 처리하지 않음
+                }
+                console.log("구독수신");
+                handleSignal(data); // WebRTC 신호 처리
+            });
+
+
+            // 방에 입장한다는 메시지를 서버로 전송
+            stompClient.send("/app/join/" + roomNo, {}, JSON.stringify({
+                type: 'join',
+                roomNo: roomNo
+            }));
         }
 
-        // Media constraints 정의
-        const constraints = {
-            audio: true
+            let peerConnection;
+            let iceCandidatesQueue = [];  // ICE 후보를 저장할 큐
+            let remoteDescriptionSet = false;  // remote description이 설정되었는지 확인하는 플래그
+
+        // PeerConnection 생성 함수
+        function createPeerConnection() {
+
+            console.log('peerConnection');
+            const config = {
+                iceServers: [{ urls: 'stun:stun.l.google.com:19302' }] // STUN 서버 설정
+            };
+
+            peerConnection = new RTCPeerConnection(config); // PeerConnection 생성
+
+        peerConnection.oniceconnectionstatechange = () => {
+            console.log('ICE connection state:', peerConnection.iceConnectionState);
+            if (peerConnection.iceConnectionState === 'connected') {
+                console.log('Peer connection established successfully!');
+            } else if (peerConnection.iceConnectionState === 'disconnected') {
+                console.log('Peer connection disconnected.');
+            } else if (peerConnection.iceConnectionState === 'failed') {
+                console.log('Peer connection failed.');
+            }
         };
 
-        // 미디어 스트림 요청 및 피어 연결에 추가
-        function startSignaling() {
-            // 현재 연결 상태 확인
-            if (peerConnection.signalingState !== "stable") {
-                console.log("Connection is not stable, offer creation aborted.");
-                return; // 이미 offer가 진행 중일 때 중복 생성 방지
-            }
-
-            navigator.mediaDevices.getUserMedia({audio: true})
-                .then(stream => {
-                    console.log("Local audio stream added:", stream);
-                    stream.getAudioTracks().forEach(track => peerConnection.addTrack(track, stream));
-                })
-                .catch(error => {
-                    console.error('Error accessing media devices:', error);
-                });
-
-
-            peerConnection.createOffer().then(offer => {
-                console.log("Created offer:", offer);
-                return peerConnection.setLocalDescription(offer);
-            }).then(() => {
-                socket.send(JSON.stringify({
-                    type: 'offer',
-                    offer: peerConnection.localDescription
-                }));
-            }).catch(error => console.error("Error creating offer:", error));
-        }
-
-        // ICE 후보 수집과 원격 스트림 처리 설정 함수
-        function setupPeerConnectionHandlers(peerConnection) {
-            // ICE 후보 수집
+            // ICE candidate 수집
             peerConnection.onicecandidate = event => {
                 if (event.candidate) {
-                    console.log("Collected ICE candidate:", event.candidate);
-                    socket.send(JSON.stringify({
+                    stompClient.send("/topic/signal/" + roomNo, {}, JSON.stringify({
                         type: 'candidate',
                         candidate: event.candidate
                     }));
-                } else {
-                    console.log("All ICE candidates have been sent.");
+                    console.log('ICE candidate sent:', event.candidate);
                 }
             };
 
-            // 원격 스트림 처리
+            // 원격 스트림 수신
             peerConnection.ontrack = event => {
                 const remoteAudio = document.createElement('audio');
                 remoteAudio.srcObject = event.streams[0];
                 remoteAudio.autoplay = true;
-                document.body.appendChild(remoteAudio);
+                document.body.appendChild(remoteAudio);  // 음성 스트림 재생
             };
 
-            // 연결 상태 변경 시
-            peerConnection.oniceconnectionstatechange = () => {
-                console.log("ICE Connection State: ", peerConnection.iceConnectionState);
-                if (peerConnection.iceConnectionState === 'failed' || peerConnection.iceConnectionState === 'disconnected') {
-                    console.log("Recreating peer connection...");
-                    recreatePeerConnection();
-                }
-            };
+            console.log('RTCPeerConnection created.');
         }
 
-        function recreatePeerConnection() {
-            if (peerConnection) {
-                peerConnection.close();
-            }
+        // WebRTC Offer 생성 및 STOMP로 전송
+        function startSignaling() {
+            navigator.mediaDevices.getUserMedia({ audio: true })
+                .then(stream => {
+                    // 로컬 오디오 트랙을 peerConnection에 추가
+                    stream.getTracks().forEach(track => peerConnection.addTrack(track, stream));
+                    peerConnection.createOffer().then(offer => {
+                        console.log('Offer 생성됨:', offer);
 
-            peerConnection = new RTCPeerConnection();
-
-            // ICE 후보 수집과 원격 스트림 처리 설정
-            setupPeerConnectionHandlers(peerConnection);
+                        return peerConnection.setLocalDescription(offer);  // 비동기 처리로 setLocalDescription 완료 후 다음 실행
+                    }).then(() => {
+                        console.log('Local description 설정됨:', peerConnection.localDescription);
+                        stompClient.send("/topic/signal/" + roomNo, {}, JSON.stringify({
+                            type: 'offer',
+                            offer: peerConnection.localDescription,  // Offer를 STOMP로 전송
+                            loginMemberId:${loginMember.id}
+                        }));
+                        console.log('Offer sent to room:', roomNo);
+                    }).catch(error => {
+                        console.error('Error creating or setting offer:', error);
+                    });
+                })
+                .catch(error => console.error('Error accessing media devices:', error));
         }
 
-        // 소켓 메시지 처리
-        socket.onmessage = message => {
-            const data = JSON.parse(message.data);
+// Offer를 받았을 때 처리
+function handleOffer(offer) {
+    console.log('Offer received:', offer);  // 수신된 offer 로그 추가
+    const remoteDescription = new RTCSessionDescription(offer);
 
-            if (data.type === 'offer') {
-                peerConnection.setRemoteDescription(new RTCSessionDescription(data.offer));
-                peerConnection.createAnswer().then(answer => {
-                    peerConnection.setLocalDescription(answer);
-                    socket.send(JSON.stringify({
-                        type: 'answer',
-                        answer: answer
-                    }));
-                });
-            } else if (data.type === 'answer') {
-                peerConnection.setRemoteDescription(new RTCSessionDescription(data.answer));
-            } else if (data.type === 'candidate') {
-                peerConnection.addIceCandidate(new RTCIceCandidate(data.candidate));
+
+
+    // remote description을 설정
+    peerConnection.setRemoteDescription(remoteDescription)
+        .then(() => {
+            console.log('Current signaling state after setting remote description:', peerConnection.signalingState);
+            remoteDescriptionSet = true;  // remote description 설정 완료
+            // 대기 중이던 ICE 후보 처리
+            iceCandidatesQueue.forEach(candidate => {
+                peerConnection.addIceCandidate(new RTCIceCandidate(candidate));
+            });
+            iceCandidatesQueue = [];  // 큐 초기화
+            return peerConnection.createAnswer(); // Answer 생성
+        })
+        .then(answer => {
+            console.log('Answer generated:', answer);
+            return peerConnection.setLocalDescription(answer); // Answer를 로컬 설명으로 설정
+        })
+        .then(() => {
+            console.log('Local description set to answer:', peerConnection.localDescription);
+            stompClient.send("/topic/signal/" + roomNo, {}, JSON.stringify({
+                type: 'answer',
+                answer: peerConnection.localDescription  // Answer를 STOMP로 전송
+            }));
+        })
+        .catch(error => console.error('Error handling offer:', error));
+}
+
+
+
+// Answer를 받았을 때 처리
+function handleAnswer(answer) {
+    console.log('Answer received:', answer);
+    const remoteAnswerDescription = new RTCSessionDescription(answer);
+
+        peerConnection.setRemoteDescription(remoteAnswerDescription)
+            .then(() => {
+                console.log('Remote answer set successfully');
+            })
+            .catch(error => console.error('Error setting remote answer:', error));
+}
+
+
+        // 받은 ICE candidate를 추가
+        function handleCandidate(candidate) {
+            if (remoteDescriptionSet) {
+                // remote description이 설정되었으면 ICE 후보를 바로 추가
+                peerConnection.addIceCandidate(new RTCIceCandidate(candidate))
+                    .catch(error => console.error('Error adding ICE candidate:', error));
+            } else {
+                // remote description이 아직 설정되지 않았으면 큐에 저장
+                iceCandidatesQueue.push(candidate);
+                console.log('ice후보 추가');
             }
-        };
+        }
 
-        $("#test").click(function () {
-            initializeWebSocket();
-            startSignaling();
-            setupPeerConnectionHandlers(peerConnection); // 피어 연결 핸들러 설정
-        });
+        // STOMP로 수신된 WebRTC 신호 처리
+        function handleSignal(signal) {
+            if (signal.type === 'offer') {
+                console.log('offer보내기');
+                handleOffer(signal.offer);  // Offer 처리
+            } else if (signal.type === 'answer') {
+                console.log('answer보내기');
+                console.log('answerTest',signal.answer);
+                handleAnswer(signal.answer);  // Answer 처리
+            } else if (signal.type === 'candidate') {
+                handleCandidate(signal.candidate);  // ICE Candidate 처리
+            }
+        }
+
+
+
+
 
         /* 사이드바 */
         // 사이드바 띄우기
@@ -303,7 +372,7 @@
                                         <div class="d-flex w-100 align-items-center justify-content-between">
                                             <small class="text-muted">\${alarm.createAt}</small>
                                         </div>
-                                        <p class="text-light">\${alarm.display_name}의 친구 요청.</p>
+                                        <p class="text-light">\${alarm.displayName}의 친구 요청.</p>
                                         <div class="alarm-buttons" style="display:flex;justify-content: space-around;">
                                             <button class="action-btn btn btn-success" data-user-id="\${alarm.usrId}" data-alarm-id ="\${alarm.friendRequestId}" data-action="accept">수락</button>
                                             <button class="action-btn btn btn-danger" data-user-id="\${alarm.usrId}" data-alarm-id ="\${alarm.friendRequestId}" data-action="reject">거절</button>
@@ -391,7 +460,7 @@
                             `<div class="dropdown">
                                 <a class="list-group-item list-group-item-action py-2 lh-tight bg-dark" href="#" role="button" id="dropdownMenuLink\${user.id}" data-bs-toggle="dropdown" aria-expanded="false">
                                 <div class="d-flex w-100 align-items-center justify-content-between">
-                                    <strong class="mb-1">\${user.display_name}</strong>
+                                    <strong class="mb-1">\${user.displayName}</strong>
                                     <small class="text-muted">\${user.statusMessage}</small>
                                 </div>
                                 </a>
@@ -470,7 +539,7 @@
                             friendListHtml += `
                                 <div class="friend-item dropdown" id="friend-\${friend.usrId}">
                                 <p class="dropdown-toggle" id="dropdownMenuButton\${friend.usrId}" data-bs-toggle="dropdown" aria-expanded="false">
-                                \${friend.display_name} (\${friend.statusMessage || ''})
+                                \${friend.displayName} (\${friend.statusMessage || ''})
                         </p>
                             <ul class="dropdown-menu dropdown-menu-dark" aria-labelledby="dropdownMenuButton\${friend.usrId}">
                                 <li><a class="dropdown-item" href="#" onclick="viewProfile(\${friend.id})">프로필 보기</a></li>
@@ -501,9 +570,9 @@
         }
 
         // 통화하기 함수
-            var roomNo = null;
-        function startCall(friendId,displayName) {
-            console.log('친구아이디'+friendId);
+        var roomNo = null;
+        function startCall(friendId, displayName) {
+            console.log('친구아이디' + friendId);
             // 기존 채팅방이 있을 경우 제거
             $('#chat-room').remove();
             // 새로운 채팅방 div 추가
@@ -511,6 +580,8 @@
         <div id="chat-room" class="chat-room">
             <h3>\${displayName}와의 통화 및 채팅</h3>
             <div class="chat-controls">
+            <button class="btn btn-success" id="start-call-button">통화 시작</button>
+
                 <button class="btn btn-danger" onclick="endCall()">통화 종료</button>
             </div>
             <div class="chat-box">
@@ -525,14 +596,14 @@
         </div>
     `;
             $.ajax({
-                type:"POST",
-                url:"/startCall",
-                data:{
-                    friendId : friendId,
-                    myId : ${loginMember.id}
+                type: "POST",
+                url: "/startCall",
+                data: {
+                    friendId: friendId,
+                    myId: ${loginMember.id}
                 },
-                success:function(response){
-                    console.log(response.roomNo+"방번호");
+                success: function (response) {
+                    console.log(response.roomNo + "방번호");
                     roomNo = response.roomNo;
                     let messages = response.messages;
                     // 받은 메시지를 #messages div에 추가
@@ -546,22 +617,26 @@
                         `;
                         $("#messages").append(messageHtml);
                     });
-                        stompClient.subscribe('/topic/room/' + roomNo, function (message) {
-                            let loginMemberId = ${loginMember.id};
-                            let parsedMessage = JSON.parse(message.body);
+                    stompClient.subscribe('/topic/room/' + roomNo, function (message) {
+                        let loginMemberId = ${loginMember.id};
+                        let parsedMessage = JSON.parse(message.body);
 
-                            console.log('sub수신');
-                            console.log(message);
-                            let messageHtmlLive = `
+                        console.log('sub수신');
+                        console.log(message);
+                        let messageHtmlLive = `
                             <div class="message-item">
                                 <strong>\${parsedMessage.writer === loginMemberId ? '나' : '상대방'}: </strong>
                                 <span>\${parsedMessage.message}</span>
                                 <small class="text-muted">\${new Date(parsedMessage.messageTime).toLocaleTimeString()}</small>
                             </div>
                         `;
-                            $("#messages").append(messageHtmlLive);
-                        });
-                },error:function(error){
+                        $("#messages").append(messageHtmlLive);
+                        $('#messages').scrollTop($('#messages')[0].scrollHeight);
+
+                    });
+                    $('#messages').scrollTop($('#messages')[0].scrollHeight);
+
+                }, error: function (error) {
                     console.log(error);
                 }
             });
@@ -590,26 +665,36 @@
 
             // 메시지를 서버로 전송하는 로직 (추후 서버 연동 필요)
             console.log('메시지 전송:', message, '대상:', friendId);
-            console.log('방번호'+roomNo);
+            console.log('방번호' + roomNo);
             $.ajax({
-                type:"POST",
-                url:"/sendMessage",
+                type: "POST",
+                url: "/sendMessage",
                 contentType: "application/json",
-                data:JSON.stringify({
-                    channelId : roomNo,
-                    writer : ${loginMember.id},
-                    message : message,
-                    messageTime : new Date().getTime()
+                data: JSON.stringify({
+                    channelId: roomNo,
+                    writer: ${loginMember.id},
+                    message: message,
+                    messageTime: new Date().getTime()
                 }),
-                success:function (response){
+                success: function (response) {
                     console.log(response);
                 }
             })
 
             // 전송한 메시지를 채팅창에 추가
             $('#messageInput').val(''); // 입력창 비우기
-
+            $('#messages').scrollTop($('#messages')[0].scrollHeight);
         }
+
+        $(document).on('keydown', '#messageInput', function (event) {
+            if (event.which === 13 || event.keyCode === 13) {
+                event.preventDefault(); // 엔터 키로 줄바꿈 방지
+                sendMessage();
+            }
+        });
+
+
+
 
     </script>
 </c:if>
